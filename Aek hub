@@ -1,0 +1,246 @@
+-- Roblox LocalScript (Roact Framework)
+-- Functions: ESP, Hitbox Expander, WalkSpeed Controller
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
+-- Check for Roact library inside ReplicatedStorage
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Roact = nil
+
+local success, err = pcall(function()
+    Roact = require(ReplicatedStorage:FindFirstChild("Roact", true))
+end)
+
+if not success or not Roact then
+    warn("Roact library not found in ReplicatedStorage. Please ensure Roact module is present.")
+    return
+end
+
+--------------------------------------------------------------------------------
+-- STATE MANAGEMENT & CONFIGURATION
+--------------------------------------------------------------------------------
+local Config = {
+    ESPEnabled = false,
+    HitboxEnabled = false,
+    HitboxSize = 10,
+    OriginalSizes = {},
+    SpeedEnabled = false,
+    TargetSpeed = 50,
+    DefaultSpeed = 16
+}
+
+local ESPHighlights = {}
+
+--------------------------------------------------------------------------------
+-- CORE FUNCTIONS
+--------------------------------------------------------------------------------
+
+-- ESP Function
+local function UpdateESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if Config.ESPEnabled then
+                if player.Character and not ESPHighlights[player] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "ESPHighlight"
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                    highlight.Adornee = player.Character
+                    highlight.Parent = player.Character
+                    ESPHighlights[player] = highlight
+                end
+            else
+                if ESPHighlights[player] then
+                    ESPHighlights[player]:Destroy()
+                    ESPHighlights[player] = nil
+                end
+            end
+        end
+    end
+end
+
+-- Hitbox Expander Function
+local function UpdateHitbox()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                if Config.HitboxEnabled then
+                    if not Config.OriginalSizes[hrp] then
+                        Config.OriginalSizes[hrp] = hrp.Size
+                    end
+                    hrp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+                    hrp.Transparency = 0.7
+                    hrp.BrickColor = BrickColor.new("Really red")
+                    hrp.Material = Enum.Material.ForceField
+                    hrp.CanCollide = false
+                else
+                    if Config.OriginalSizes[hrp] then
+                        hrp.Size = Config.OriginalSizes[hrp]
+                        hrp.Transparency = 1
+                        hrp.CanCollide = true
+                        Config.OriginalSizes[hrp] = nil
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Speed Loop Function
+RunService.Stepped:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        local humanoid = LocalPlayer.Character.Humanoid
+        if Config.SpeedEnabled then
+            humanoid.WalkSpeed = Config.TargetSpeed
+        end
+    end
+    
+    if Config.ESPEnabled then
+        UpdateESP()
+    end
+    
+    if Config.HitboxEnabled then
+        UpdateHitbox()
+    end
+end)
+
+-- Player Removal Cleanup
+Players.PlayerRemoving:Connect(function(player)
+    if ESPHighlights[player] then
+        ESPHighlights[player]:Destroy()
+        ESPHighlights[player] = nil
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- ROACT GUI COMPONENTS
+--------------------------------------------------------------------------------
+
+local MenuApp = Roact.Component:extend("MenuApp")
+
+function MenuApp:init()
+    self:setState({
+        esp = false,
+        hitbox = false,
+        speed = false
+    })
+end
+
+function MenuApp:render()
+    return Roact.createElement("ScreenGui", {
+        ResetOnSpawn = false
+    }, {
+        MainFrame = Roact.createElement("Frame", {
+            Size = UDim2.new(0, 300, 0, 350),
+            Position = UDim2.new(0.5, -150, 0.5, -175),
+            BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+            BorderSizePixel = 0,
+            Active = true,
+            Draggable = true
+        }, {
+            UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
+            
+            Title = Roact.createElement("TextLabel", {
+                Size = UDim2.new(1, 0, 0, 40),
+                BackgroundColor3 = Color3.fromRGB(45, 45, 45),
+                Text = "UNIVERSAL UTILITY",
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+                TextSize = 16,
+                Font = Enum.Font.SourceSansBold
+            }, {
+                UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 8) })
+            }),
+            
+            Container = Roact.createElement("Frame", {
+                Size = UDim2.new(1, -20, 1, -60),
+                Position = UDim2.new(0, 10, 0, 50),
+                BackgroundTransparency = 1
+            }, {
+                UIListLayout = Roact.createElement("UIListLayout", {
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Padding = UDim.new(0, 10)
+                }),
+                
+                -- Toggle ESP Button
+                ESPButton = Roact.createElement("TextButton", {
+                    LayoutOrder = 1,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    BackgroundColor3 = self.state.esp and Color3.fromRGB(40, 160, 80) or Color3.fromRGB(60, 60, 60),
+                    Text = "ESP: " .. (self.state.esp and "ON" or "OFF"),
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = Enum.Font.SourceSans,
+                    TextSize = 14,
+                    [Roact.Event.Activated] = function()
+                        local newState = not self.state.esp
+                        self:setState({ esp = newState })
+                        Config.ESPEnabled = newState
+                        if not newState then UpdateESP() end
+                    end
+                }, { UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }) }),
+                
+                -- Toggle Hitbox Button
+                HitboxButton = Roact.createElement("TextButton", {
+                    LayoutOrder = 2,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    BackgroundColor3 = self.state.hitbox and Color3.fromRGB(40, 160, 80) or Color3.fromRGB(60, 60, 60),
+                    Text = "HITBOX PLAYERS: " .. (self.state.hitbox and "ON" or "OFF"),
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = Enum.Font.SourceSans,
+                    TextSize = 14,
+                    [Roact.Event.Activated] = function()
+                        local newState = not self.state.hitbox
+                        self:setState({ hitbox = newState })
+                        Config.HitboxEnabled = newState
+                        if not newState then UpdateHitbox() end
+                    end
+                }, { UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }) }),
+                
+                -- Toggle Speed Button
+                SpeedButton = Roact.createElement("TextButton", {
+                    LayoutOrder = 3,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    BackgroundColor3 = self.state.speed and Color3.fromRGB(40, 160, 80) or Color3.fromRGB(60, 60, 60),
+                    Text = "SPEED (50): " .. (self.state.speed and "ON" or "OFF"),
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = Enum.Font.SourceSans,
+                    TextSize = 14,
+                    [Roact.Event.Activated] = function()
+                        local newState = not self.state.speed
+                        self:setState({ speed = newState })
+                        Config.SpeedEnabled = newState
+                    end
+                }, { UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }) }),
+                
+                -- Reset Speed Button
+                ResetSpeedButton = Roact.createElement("TextButton", {
+                    LayoutOrder = 4,
+                    Size = UDim2.new(1, 0, 0, 40),
+                    BackgroundColor3 = Color3.fromRGB(180, 50, 50),
+                    Text = "RESET SPEED",
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = Enum.Font.SourceSansBold,
+                    TextSize = 14,
+                    [Roact.Event.Activated] = function()
+                        self:setState({ speed = false })
+                        Config.SpeedEnabled = false
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                            LocalPlayer.Character.Humanoid.WalkSpeed = Config.DefaultSpeed
+                        end
+                    end
+                }, { UICorner = Roact.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }) })
+            })
+        })
+    })
+end
+
+--------------------------------------------------------------------------------
+-- MOUNT TO PLAYER GUI
+--------------------------------------------------------------------------------
+local targetParent = LocalPlayer:WaitForChild("PlayerGui")
+Roact.mount(Roact.createElement(MenuApp), targetParent, "RoactUtilityUI")
